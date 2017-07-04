@@ -57,6 +57,21 @@
 #include <FaceAnalyser.h>
 #include <GazeEstimation.h>
 
+#include <iostream>
+#include <string>
+#include <boost/array.hpp>
+#include <boost/asio.hpp>
+#include <boost/bind.hpp>
+using namespace std;
+
+#define OPEN_UDP_PORT               0
+#define SEND_DATA_TO_SERVER         1
+#define RECEIVE_ANSWER_FROM_SERVER  2
+#define CLOSE_UDP_PORT              3
+#define RECEIVE_DATA               20
+#define ERROR                      10
+#define ERROR_HANDLING 			   30
+
 #ifndef CONFIG_DIR
 #define CONFIG_DIR "~"
 #endif
@@ -81,6 +96,95 @@ printErrorAndAbort( std::string( "Fatal error: " ) + stream )
 using namespace std;
 
 using namespace boost::filesystem;
+
+using boost::asio::ip::udp;
+
+class UDPClient
+{
+public:
+	UDPClient(
+		boost::asio::io_service& io_service,
+		const std::string& host,
+		const std::string& port
+	) : io_service_(io_service), socket_(io_service, udp::endpoint(udp::v4(), 0)) {
+		udp::resolver resolver(io_service_);
+		udp::resolver::query query(udp::v4(), host, port);
+		udp::resolver::iterator iter = resolver.resolve(query);
+
+		boost::asio::socket_base::broadcast option(true); // Socket option to permit broadcast messages
+
+		socket_.set_option(option);
+		endpoint_ = *iter;
+	}
+
+	~UDPClient()
+	{
+		socket_.close();
+	}
+
+	void send(const std::string& msg) {
+		socket_.send_to(boost::asio::buffer(msg, msg.size()), endpoint_);
+	}
+
+	bool isOpen()
+	{
+
+		if(socket_.is_open())
+		{
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	void connect_handler(const boost::system::error_code &error )
+	{
+		if(!error)
+		{
+			cout << "Everything went well" << endl;
+		}
+		if(error)
+		{
+			cout << "Something went wront" << endl;
+		}
+		else
+		{
+			cout << "nothing returned" << endl;
+		}
+	}
+
+	void write_handler(const boost::system::error_code& error, std::size_t byte_transferred)
+	{
+		if(!error)
+		{
+			cout << "Everything went well" << endl;
+		}
+		if(error)
+		{
+			cout << "Something went wront" << endl;
+		}
+		else
+		{
+			cout << "nothing returned" << endl;
+		}
+	}
+
+	void sendToServer(string scannerAddress, int port,std::ofstream *data_in)
+	{	
+		std::string data =  data_in.str();
+		boost::asio::ip::udp::endpoint endpoint(boost::asio::ip::address::from_string(scannerAddress),port);
+		socket_.async_connect(endpoint,boost::bind(&UDPClient::connect_handler,this,boost::asio::placeholders::error)); //async connect to server
+		socket_.async_send(boost::asio::buffer(data),0, boost::bind(&UDPClient::write_handler,this, boost::asio::placeholders::error,sizeof(data))); //async send to server
+
+	}
+
+private:
+	boost::asio::io_service& io_service_;
+	udp::socket socket_;
+	udp::endpoint endpoint_;
+};
 
 vector<string> get_arguments(int argc, char **argv)
 {
@@ -218,6 +322,15 @@ void post_process_output_file(FaceAnalysis::FaceAnalyser& face_analyser, string 
 
 int main (int argc, char **argv)
 {
+
+	//define udp client to pass throught data
+	int state = OPEN_UDP_PORT;
+	//string scannerAddress = "10.48.37.183";
+
+  	boost::asio::io_service io_service;
+	UDPClient client(io_service, "localhost", "8080" ); // Client created;
+
+
 
 	vector<string> arguments = get_arguments(argc, argv);
 
@@ -636,6 +749,28 @@ int main (int argc, char **argv)
 				face_model, frame_count, time_stamp, detection_success, gazeDirection0, gazeDirection1,
 				pose_estimate, fx, fy, cx, cy, face_analyser);
 
+
+			//output data thought udp 
+			switch (state){
+    		case OPEN_UDP_PORT:
+	  				if(client.isOpen())
+						state = SEND_DATA_TO_SERVER;
+	  				else 
+						state = ERROR_HANDLING;
+					break;    		
+
+    		case SEND_DATA_TO_SERVER:
+				client.sendToServer('localhost',8080,&output_file);
+          		break;    		
+    		
+    		case CLOSE_UDP_PORT:
+          		cout << "comunication close" << endl;
+    	  		break;
+    		
+    		case ERROR_HANDLING:
+          		cout << "error handling" << endl;
+    	  		break;
+  			}
 			// output the tracked video
 			if(!tracked_videos_output.empty())
 			{		
