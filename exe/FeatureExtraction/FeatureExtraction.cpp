@@ -62,15 +62,6 @@
 #include <boost/array.hpp>
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
-using namespace std;
-
-#define OPEN_UDP_PORT               0
-#define SEND_DATA_TO_SERVER         1
-#define RECEIVE_ANSWER_FROM_SERVER  2
-#define CLOSE_UDP_PORT              3
-#define RECEIVE_DATA               20
-#define ERROR                      10
-#define ERROR_HANDLING 			   30
 
 #ifndef CONFIG_DIR
 #define CONFIG_DIR "~"
@@ -97,94 +88,7 @@ using namespace std;
 
 using namespace boost::filesystem;
 
-using boost::asio::ip::udp;
-
-class UDPClient
-{
-public:
-	UDPClient(
-		boost::asio::io_service& io_service,
-		const std::string& host,
-		const std::string& port
-	) : io_service_(io_service), socket_(io_service, udp::endpoint(udp::v4(), 0)) {
-		udp::resolver resolver(io_service_);
-		udp::resolver::query query(udp::v4(), host, port);
-		udp::resolver::iterator iter = resolver.resolve(query);
-
-		boost::asio::socket_base::broadcast option(true); // Socket option to permit broadcast messages
-
-		socket_.set_option(option);
-		endpoint_ = *iter;
-	}
-
-	~UDPClient()
-	{
-		socket_.close();
-	}
-
-	void send(const std::string& msg) {
-		socket_.send_to(boost::asio::buffer(msg, msg.size()), endpoint_);
-	}
-
-	bool isOpen()
-	{
-
-		if(socket_.is_open())
-		{
-			return true;
-		}
-		else
-		{
-			return false;
-		}
-	}
-
-	void connect_handler(const boost::system::error_code &error )
-	{
-		if(!error)
-		{
-			cout << "Everything went well" << endl;
-		}
-		if(error)
-		{
-			cout << "Something went wront" << endl;
-		}
-		else
-		{
-			cout << "nothing returned" << endl;
-		}
-	}
-
-	void write_handler(const boost::system::error_code& error, std::size_t byte_transferred)
-	{
-		if(!error)
-		{
-			cout << "Everything went well" << endl;
-		}
-		if(error)
-		{
-			cout << "Something went wront" << endl;
-		}
-		else
-		{
-			cout << "nothing returned" << endl;
-		}
-	}
-
-	void sendToServer(string scannerAddress, int port,std::ofstream *data_in)
-	{	
-		std::string data =  data_in.str();
-		boost::asio::ip::udp::endpoint endpoint(boost::asio::ip::address::from_string(scannerAddress),port);
-		socket_.async_connect(endpoint,boost::bind(&UDPClient::connect_handler,this,boost::asio::placeholders::error)); //async connect to server
-		socket_.async_send(boost::asio::buffer(data),0, boost::bind(&UDPClient::write_handler,this, boost::asio::placeholders::error,sizeof(data))); //async send to server
-
-	}
-
-private:
-	boost::asio::io_service& io_service_;
-	udp::socket socket_;
-	udp::endpoint endpoint_;
-};
+using namespace boost::asio;
 
 vector<string> get_arguments(int argc, char **argv)
 {
@@ -311,7 +215,7 @@ void prepareOutputFile(std::ofstream* output_file, bool output_2D_landmarks, boo
 	int num_landmarks, int num_model_modes, vector<string> au_names_class, vector<string> au_names_reg);
 
 // Output all of the information into one file in one go (quite a few parameters, but simplifies the flow)
-void outputAllFeatures(std::ofstream* output_file, bool output_2D_landmarks, bool output_3D_landmarks,
+void outputAllFeatures(std::ofstream* output_file,std::ofstream* data_udp, bool output_2D_landmarks, bool output_3D_landmarks,
 	bool output_model_params, bool output_pose, bool output_AUs, bool output_gaze,
 	const LandmarkDetector::CLNF& face_model, int frame_count, double time_stamp, bool detection_success,
 	cv::Point3f gazeDirection0, cv::Point3f gazeDirection1, const cv::Vec6d& pose_estimate, double fx, double fy, double cx, double cy,
@@ -322,13 +226,15 @@ void post_process_output_file(FaceAnalysis::FaceAnalyser& face_analyser, string 
 
 int main (int argc, char **argv)
 {
+		
+	std::ofstream data_udp;  //data buffer
+	io_service io_service;
+	ip::udp::socket socket(io_service);
+	ip::udp::endpoint remote_endpoint;
 
-	//define udp client to pass throught data
-	int state = OPEN_UDP_PORT;
-	//string scannerAddress = "10.48.37.183";
-
-  	boost::asio::io_service io_service;
-	UDPClient client(io_service, "localhost", "8080" ); // Client created;
+	socket.open(ip::udp::v4());
+	remote_endpoint = ip::udp::endpoint(ip::address::from_string("127.0.0.1"), 8080);
+	boost::system::error_code err;
 
 
 
@@ -745,33 +651,14 @@ int main (int argc, char **argv)
 			visualise_tracking(captured_image, face_model, det_parameters, gazeDirection0, gazeDirection1, frame_count, fx, fy, cx, cy);
 
 			// Output the landmarks, pose, gaze, parameters and AUs
-			outputAllFeatures(&output_file, output_2D_landmarks, output_3D_landmarks, output_model_params, output_pose, output_AUs, output_gaze,
+			outputAllFeatures(&output_file,&data_udp, output_2D_landmarks, output_3D_landmarks, output_model_params, output_pose, output_AUs, output_gaze,
 				face_model, frame_count, time_stamp, detection_success, gazeDirection0, gazeDirection1,
 				pose_estimate, fx, fy, cx, cy, face_analyser);
+			
+			socket.send_to(buffer(&data_udp , sizeof(data_udp)), remote_endpoint, 0, err);
 
 
-			//output data thought udp 
-			switch (state){
-    		case OPEN_UDP_PORT:
-	  				if(client.isOpen())
-						state = SEND_DATA_TO_SERVER;
-	  				else 
-						state = ERROR_HANDLING;
-					break;    		
-
-    		case SEND_DATA_TO_SERVER:
-				client.sendToServer('localhost',8080,&output_file);
-          		break;    		
-    		
-    		case CLOSE_UDP_PORT:
-          		cout << "comunication close" << endl;
-    	  		break;
-    		
-    		case ERROR_HANDLING:
-          		cout << "error handling" << endl;
-    	  		break;
-  			}
-			// output the tracked video
+				// output the tracked video
 			if(!tracked_videos_output.empty())
 			{		
 				writerFace << captured_image;
@@ -851,6 +738,8 @@ int main (int argc, char **argv)
 			done = true;
 		}
 	}
+	socket.close();
+
 
 	return 0;
 }
@@ -930,12 +819,13 @@ void prepareOutputFile(std::ofstream* output_file, bool output_2D_landmarks, boo
 }
 
 // Output all of the information into one file in one go (quite a few parameters, but simplifies the flow)
-void outputAllFeatures(std::ofstream* output_file, bool output_2D_landmarks, bool output_3D_landmarks,
+void outputAllFeatures(std::ofstream* output_file,std::ofstream* data_udp, bool output_2D_landmarks, bool output_3D_landmarks,
 	bool output_model_params, bool output_pose, bool output_AUs, bool output_gaze,
 	const LandmarkDetector::CLNF& face_model, int frame_count, double time_stamp, bool detection_success,
 	cv::Point3f gazeDirection0, cv::Point3f gazeDirection1, const cv::Vec6d& pose_estimate, double fx, double fy, double cx, double cy,
 	const FaceAnalysis::FaceAnalyser& face_analyser)
 {
+
 
 	double confidence = 0.5 * (1 - face_model.detection_certainty);
 
@@ -946,6 +836,10 @@ void outputAllFeatures(std::ofstream* output_file, bool output_2D_landmarks, boo
 	{
 		*output_file << ", " << gazeDirection0.x << ", " << gazeDirection0.y << ", " << gazeDirection0.z
 			<< ", " << gazeDirection1.x << ", " << gazeDirection1.y << ", " << gazeDirection1.z;
+
+		// data to udp
+		*data_udp << ", " << gazeDirection0.x << ", " << gazeDirection0.y << ", " << gazeDirection0.z
+			<< ", " << gazeDirection1.x << ", " << gazeDirection1.y << ", " << gazeDirection1.z;
 	}
 
 	// Output the estimated head pose
@@ -955,10 +849,14 @@ void outputAllFeatures(std::ofstream* output_file, bool output_2D_landmarks, boo
 		{
 			*output_file << ", " << pose_estimate[0] << ", " << pose_estimate[1] << ", " << pose_estimate[2]
 				<< ", " << pose_estimate[3] << ", " << pose_estimate[4] << ", " << pose_estimate[5];
+			// data to udp
+			*data_udp << ", " << pose_estimate[0] << ", " << pose_estimate[1] << ", " << pose_estimate[2]
+				<< ", " << pose_estimate[3] << ", " << pose_estimate[4] << ", " << pose_estimate[5];
 		}
 		else
 		{
 			*output_file << ", 0, 0, 0, 0, 0, 0";
+			*data_udp << ", 0, 0, 0, 0, 0, 0";
 		}
 	}
 
