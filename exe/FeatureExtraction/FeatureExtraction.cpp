@@ -233,7 +233,7 @@ int main (int argc, char **argv)
 	ip::udp::endpoint remote_endpoint;
 
 	socket.open(ip::udp::v4());
-	remote_endpoint = ip::udp::endpoint(ip::address::from_string("127.0.0.1"), 8080);
+	remote_endpoint = ip::udp::endpoint(ip::address::from_string("127.0.0.1"), 5432);
 	boost::system::error_code err;
 
 
@@ -838,8 +838,8 @@ void outputAllFeatures(std::ofstream* output_file,std::ofstream* data_udp, bool 
 			<< ", " << gazeDirection1.x << ", " << gazeDirection1.y << ", " << gazeDirection1.z;
 
 		// data to udp
-		*data_udp << ", " << gazeDirection0.x << ", " << gazeDirection0.y << ", " << gazeDirection0.z
-			<< ", " << gazeDirection1.x << ", " << gazeDirection1.y << ", " << gazeDirection1.z;
+		*data_udp << ", " << gazeDirection0.x << " " << gazeDirection0.y << " " << gazeDirection0.z
+			<< ", " << gazeDirection1.x << " " << gazeDirection1.y << " " << gazeDirection1.z;
 	}
 
 	// Output the estimated head pose
@@ -848,15 +848,15 @@ void outputAllFeatures(std::ofstream* output_file,std::ofstream* data_udp, bool 
 		if(face_model.tracking_initialised)
 		{
 			*output_file << ", " << pose_estimate[0] << ", " << pose_estimate[1] << ", " << pose_estimate[2]
-				<< ", " << pose_estimate[3] << ", " << pose_estimate[4] << ", " << pose_estimate[5];
+				<< ", " << pose_estimate[3] << " " << pose_estimate[4] << ", " << pose_estimate[5];
 			// data to udp
-			*data_udp << ", " << pose_estimate[0] << ", " << pose_estimate[1] << ", " << pose_estimate[2]
-				<< ", " << pose_estimate[3] << ", " << pose_estimate[4] << ", " << pose_estimate[5];
+			*data_udp << ", " << pose_estimate[0] << ", " << pose_estimate[1] << " " << pose_estimate[2]
+				<< ", " << pose_estimate[3] << " " << pose_estimate[4] << " " << pose_estimate[5];
 		}
 		else
 		{
 			*output_file << ", 0, 0, 0, 0, 0, 0";
-			*data_udp << ", 0, 0, 0, 0, 0, 0";
+			*data_udp << " 0 0 0 0 0 0";
 		}
 	}
 
