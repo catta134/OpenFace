@@ -215,7 +215,7 @@ void prepareOutputFile(std::ofstream* output_file, bool output_2D_landmarks, boo
 	int num_landmarks, int num_model_modes, vector<string> au_names_class, vector<string> au_names_reg);
 
 // Output all of the information into one file in one go (quite a few parameters, but simplifies the flow)
-void outputAllFeatures(std::ofstream* output_file,std::ofstream* data_udp, bool output_2D_landmarks, bool output_3D_landmarks,
+void outputAllFeatures(std::ofstream* output_file,float*, bool output_2D_landmarks, bool output_3D_landmarks,
 	bool output_model_params, bool output_pose, bool output_AUs, bool output_gaze,
 	const LandmarkDetector::CLNF& face_model, int frame_count, double time_stamp, bool detection_success,
 	cv::Point3f gazeDirection0, cv::Point3f gazeDirection1, const cv::Vec6d& pose_estimate, double fx, double fy, double cx, double cy,
@@ -227,15 +227,19 @@ void post_process_output_file(FaceAnalysis::FaceAnalyser& face_analyser, string 
 int main (int argc, char **argv)
 {
 		
-	std::ofstream data_udp;  //data buffer
+	//std::ofstream data_udp;  //data buffer
 	io_service io_service;
 	ip::udp::socket socket(io_service);
 	ip::udp::endpoint remote_endpoint;
+	//std::vector<float> *data_udp= {0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
+
 
 	socket.open(ip::udp::v4());
 	remote_endpoint = ip::udp::endpoint(ip::address::from_string("127.0.0.1"), 5432);
 	boost::system::error_code err;
-
+	float  data_udp[12];
+	for(int i=0;i<12;i++)
+		data_udp[i]=0;
 
 
 	vector<string> arguments = get_arguments(argc, argv);
@@ -651,7 +655,7 @@ int main (int argc, char **argv)
 			visualise_tracking(captured_image, face_model, det_parameters, gazeDirection0, gazeDirection1, frame_count, fx, fy, cx, cy);
 
 			// Output the landmarks, pose, gaze, parameters and AUs
-			outputAllFeatures(&output_file,&data_udp, output_2D_landmarks, output_3D_landmarks, output_model_params, output_pose, output_AUs, output_gaze,
+			outputAllFeatures(&output_file,data_udp, output_2D_landmarks, output_3D_landmarks, output_model_params, output_pose, output_AUs, output_gaze,
 				face_model, frame_count, time_stamp, detection_success, gazeDirection0, gazeDirection1,
 				pose_estimate, fx, fy, cx, cy, face_analyser);
 			
@@ -819,7 +823,7 @@ void prepareOutputFile(std::ofstream* output_file, bool output_2D_landmarks, boo
 }
 
 // Output all of the information into one file in one go (quite a few parameters, but simplifies the flow)
-void outputAllFeatures(std::ofstream* output_file,std::ofstream* data_udp, bool output_2D_landmarks, bool output_3D_landmarks,
+void outputAllFeatures(std::ofstream* output_file,float * data_udp, bool output_2D_landmarks, bool output_3D_landmarks,
 	bool output_model_params, bool output_pose, bool output_AUs, bool output_gaze,
 	const LandmarkDetector::CLNF& face_model, int frame_count, double time_stamp, bool detection_success,
 	cv::Point3f gazeDirection0, cv::Point3f gazeDirection1, const cv::Vec6d& pose_estimate, double fx, double fy, double cx, double cy,
@@ -836,10 +840,16 @@ void outputAllFeatures(std::ofstream* output_file,std::ofstream* data_udp, bool 
 	{
 		*output_file << ", " << gazeDirection0.x << ", " << gazeDirection0.y << ", " << gazeDirection0.z
 			<< ", " << gazeDirection1.x << ", " << gazeDirection1.y << ", " << gazeDirection1.z;
-
+		data_udp[0] = gazeDirection0.x;
+		data_udp[1] = gazeDirection0.y;
+		data_udp[2] = gazeDirection0.z;
+		data_udp[3] = gazeDirection1.x;
+		data_udp[4] = gazeDirection1.y;
+		data_udp[5] = gazeDirection1.z;
+		
 		// data to udp
-		*data_udp << ", " << gazeDirection0.x << " " << gazeDirection0.y << " " << gazeDirection0.z
-			<< ", " << gazeDirection1.x << " " << gazeDirection1.y << " " << gazeDirection1.z;
+		//*data_udp << ", " << gazeDirection0.x << " " << gazeDirection0.y << " " << gazeDirection0.z
+		//	<< ", " << gazeDirection1.x << " " << gazeDirection1.y << " " << gazeDirection1.z;
 	}
 
 	// Output the estimated head pose
@@ -850,13 +860,17 @@ void outputAllFeatures(std::ofstream* output_file,std::ofstream* data_udp, bool 
 			*output_file << ", " << pose_estimate[0] << ", " << pose_estimate[1] << ", " << pose_estimate[2]
 				<< ", " << pose_estimate[3] << " " << pose_estimate[4] << ", " << pose_estimate[5];
 			// data to udp
-			*data_udp << ", " << pose_estimate[0] << ", " << pose_estimate[1] << " " << pose_estimate[2]
-				<< ", " << pose_estimate[3] << " " << pose_estimate[4] << " " << pose_estimate[5];
+			//*data_udp << ", " << pose_estimate[0] << ", " << pose_estimate[1] << " " << pose_estimate[2]
+			//	<< ", " << pose_estimate[3] << " " << pose_estimate[4] << " " << pose_estimate[5];
+			for (int i=6;i<12;i++){
+				data_udp[i] = pose_estimate[i-6];}
 		}
 		else
 		{
 			*output_file << ", 0, 0, 0, 0, 0, 0";
-			*data_udp << " 0 0 0 0 0 0";
+			//*data_udp << " 0 0 0 0 0 0";
+			for (int i=6;i<12;i++){
+				data_udp[i] = 0;}
 		}
 	}
 
